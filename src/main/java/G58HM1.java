@@ -1,22 +1,25 @@
 import org.apache.spark.SparkConf;
-import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
+import org.apache.spark.api.java.function.PairFunction;
+import scala.Tuple2;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.Serializable;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Scanner;
+import java.util.stream.StreamSupport;
 
 /**
  * @author Daniele Sergio
  */
 public class G58HM1 {
 
-    private static final String RESULT__MESSAGE_TEMPLATE = "Max number using %s is: %s";
+    private static final String RESULT_MESSAGE_TEMPLATE = "Max number using %s is: %s";
 
     public static void main(String[] args) throws FileNotFoundException {
         if (args.length == 0) {
@@ -48,17 +51,26 @@ public class G58HM1 {
         // Max number using max
         double maxFromMaxMethod = dNumbers.max(new DoubleComparatorForSpark());
 
-        System.out.println(String.format(RESULT__MESSAGE_TEMPLATE,"reduce", maxFromReduceMethod));
-        System.out.println(String.format(RESULT__MESSAGE_TEMPLATE,"max", maxFromMaxMethod));
+        System.out.println(String.format(RESULT_MESSAGE_TEMPLATE,"reduce", maxFromReduceMethod));
+        System.out.println(String.format(RESULT_MESSAGE_TEMPLATE,"max", maxFromMaxMethod));
 
         // Normalize numbers
         JavaRDD<Double> dNormalized = dNumbers.map(x -> x / maxFromMaxMethod);
 
-        // Number bigger than 0,75
-        final Long biggerThan75 = dNormalized.filter( x -> x > 0.75 ).count();
-        System.out.println(String.format("Numbers bigger than 0,75: %s", biggerThan75));
+        final DecimalFormat decimalFormatter = new DecimalFormat("#.#");
+        final Long minNumOfRangeElements = dNormalized.count() / 10;
+        System.out.println("Distributions of number in  ranges wide 0.1");
+        System.out.println(String.format("Ranges with less of %s elements are ignored",minNumOfRangeElements));
+
+        dNormalized.groupBy(decimalFormatter::format)
+                .mapToPair((PairFunction<Tuple2<String, Iterable<Double>>, String, Long>) v1 -> new Tuple2<>(v1._1, StreamSupport.stream(v1._2.spliterator(), false).count()))
+                .filter((Function<Tuple2<String, Long>, Boolean>) v1 -> v1._2 >= minNumOfRangeElements)
+                .sortByKey()
+                .collect()
+                .forEach(it -> System.out.println(String.format("Elements in [%s,%s]: %s ", decimalFormatter.format(Double.parseDouble(it._1) - 0.1), it._1 , it._2)));
 
     }
+
 
     //Class to compare double must implements serializable
     private static class DoubleComparatorForSpark implements Serializable, Comparator<Double> {
