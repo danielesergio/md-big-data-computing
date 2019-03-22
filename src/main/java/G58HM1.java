@@ -58,16 +58,21 @@ public class G58HM1 {
         JavaRDD<Double> dNormalized = dNumbers.map(x -> x / maxFromMaxMethod);
 
         final DecimalFormat decimalFormatter = new DecimalFormat("#.#");
-        final Long minNumOfRangeElements = dNormalized.count() / 10;
-        System.out.println("Distributions of number in  ranges wide 0.1");
-        System.out.println(String.format("Ranges with less of %s elements are ignored",minNumOfRangeElements));
+        final Long minIntervalElements = dNormalized.count() / 10;
+        System.out.println("Distributions of number in intervals wide 0.1");
+        System.out.println(String.format("Intervals with less of %s elements are ignored",minIntervalElements));
 
-        dNormalized.groupBy(decimalFormatter::format)
-                .mapToPair((PairFunction<Tuple2<String, Iterable<Double>>, String, Long>) v1 -> new Tuple2<>(v1._1, StreamSupport.stream(v1._2.spliterator(), false).count()))
-                .filter((Function<Tuple2<String, Long>, Boolean>) v1 -> v1._2 >= minNumOfRangeElements)
+        //Group values by its interval. Each group is wide 0.1: (a,b]. (First interval is [0, 0.1] because its must contain 0).
+        dNormalized.groupBy((Function<Double, Double>) v1 -> v1 == 0 ? 0.1 : Math.ceil(v1 * 10) / 10)
+                //replace a list of value with its size
+                .mapToPair((PairFunction<Tuple2<Double, Iterable<Double>>, Double, Long>) v1 -> new Tuple2<>(v1._1, StreamSupport.stream(v1._2.spliterator(), false).count()))
+                //remove interval without enough elements
+                .filter((Function<Tuple2<Double, Long>, Boolean>) v1 -> v1._2 >= minIntervalElements)
+                //sort pair<Interval,Interval Size> by Interval
                 .sortByKey()
+                //merge values from all partitions
                 .collect()
-                .forEach(it -> System.out.println(String.format("Elements in [%s,%s]: %s ", decimalFormatter.format(Double.parseDouble(it._1) - 0.1), it._1 , it._2)));
+                .forEach(it -> System.out.println(String.format("Elements in %s%s,%s]: %s ", it._1 == 0.1 ? "[":"(", decimalFormatter.format(it._1 - 0.1), it._1 , it._2)));
 
     }
 
