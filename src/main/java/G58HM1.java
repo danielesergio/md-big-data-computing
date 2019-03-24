@@ -47,7 +47,7 @@ public class G58HM1 {
         JavaRDD<Double> dNumbers = sc.parallelize(lNumbers);
 
         // Max number using reduce
-        double maxFromReduceMethod = dNumbers.reduce((x, y) -> x > y ? x : y);
+        double maxFromReduceMethod = dNumbers.reduce(Math::max);
         // Max number using max
         double maxFromMaxMethod = dNumbers.max(new DoubleComparatorForSpark());
 
