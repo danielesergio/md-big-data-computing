@@ -30,9 +30,10 @@ public class G58HM1 {
         ArrayList<Double> lNumbers = new ArrayList<>();
         Scanner s =  new Scanner(new File(args[0]));
         while (s.hasNext()){
-            final double current = Double.parseDouble(s.next());
-            if(current<0){
-                throw new IllegalArgumentException(String.format("%s is negative. Dataset must contain only nonnegative doubles.", current));
+            final Double current = Double.valueOf(s.next());
+            boolean currentIsInValid = current.isNaN() || current.isInfinite() || (Math.signum(current) == -1);
+            if(currentIsInValid){
+                throw new IllegalArgumentException(String.format("%s is not valid. Dataset must contain only nonnegative doubles.", current));
             }
             lNumbers.add(current);
         }
