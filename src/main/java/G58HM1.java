@@ -40,7 +40,7 @@ public class G58HM1 {
 
         // Setup Spark
         SparkConf conf = new SparkConf(true)
-                .setAppName("Preliminaries");
+                .setAppName("G58HM1");
         JavaSparkContext sc = new JavaSparkContext(conf);
 
         // Create a parallel collection
@@ -72,7 +72,11 @@ public class G58HM1 {
                 .sortByKey()
                 //merge values from all partitions
                 .collect()
-                .forEach(it -> System.out.println(String.format("Elements in %s%s,%s]: %s ", it._1 == 0.1 ? "[":"(", decimalFormatter.format(it._1 - 0.1), it._1 , it._2)));
+                .forEach(it -> System.out.println(String.format("Elements in %s%s,%s]: %s ",
+                        it._1 == 0.1 ? "[":"(",
+                        decimalFormatter.format(it._1 - 0.1),
+                        it._1 ,
+                        it._2)));
 
     }
 
