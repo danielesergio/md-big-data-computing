@@ -4,30 +4,21 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
-import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.api.java.function.PairFlatMapFunction;
 import scala.Tuple2;
-import shapeless.Tuple;
 
-import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.Serializable;
-import java.text.DecimalFormat;
 import java.time.Instant;
-import java.time.Period;
 import java.util.*;
-import java.util.function.BinaryOperator;
-import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import static java.time.temporal.ChronoUnit.MILLIS;
 import static java.util.stream.Collectors.groupingBy;
-import static java.util.stream.Collectors.toSet;
 
 public class G58HM2 {
 
-    private static final String RESULT_MESSAGE_TEMPLATE = "Max number using %s is: %s";
-
-    public static void main(String[] args) throws FileNotFoundException {
+    public static void main(String[] args) throws IOException {
         if (args.length == 0) {
             throw new IllegalArgumentException("Expecting an integer 'k' and the file name on the command line");
         }
@@ -40,89 +31,150 @@ public class G58HM2 {
         SparkConf conf = new SparkConf(true)
                 .setAppName("G58HM2");
         JavaSparkContext sc = new JavaSparkContext(conf);
+        // FIXME: 06/04/19 remove log configuration before release
+        sc.setLogLevel("ERROR");
 
         final JavaRDD<String> docs = sc.textFile(filePath).repartition(k).cache();
-        final long docsSize = docs.count();
-        final Instant time1 = Instant.now();
+        docs.count();
 
-        final JavaPairRDD<String, Long> wordsInDocumentUsingAlgorithm1 = wordCount1(docs);
+        WordCounter[] wordCounters = new WordCounter[]{
+                new WordCounterWithTimer(new WordCounter1(docs)),
+                new WordCounterWithTimer(new WordCounter2a(docs, k)),
+                new WordCounterWithTimer(new WordCounter2b(docs))
+        };
 
-        System.out.println(String.format("Time = %s", MILLIS.between(time1, Instant.now())));
+        System.out.println(String.format("The average length of words is: %s == %s == %s", Arrays.stream(wordCounters).map(WordCounter::count).map(G58HM2::averageLengthOfDistinctWord).toArray()));
 
-        final JavaRDD<String> distinctWordInDocuments = wordsInDocumentUsingAlgorithm1
+//        Scanner scanner = new Scanner(System.in);
+//        scanner.nextLine();
+    }
+
+    private static double averageLengthOfDistinctWord(JavaPairRDD<String, Long> wordsInDocument) {
+
+        final JavaRDD<String> distinctWordInDocuments = wordsInDocument
                 .keys()
                 .distinct();
 
-        final double averageLengthOfDistinctWord = distinctWordInDocuments
+        return distinctWordInDocuments
                 .map((Function<String, Integer>) String::length)
-                .reduce((Function2<Integer, Integer, Integer>) (v1, v2) -> v1 + v2)
+                .reduce((Function2<Integer, Integer, Integer>) Integer::sum)
                 / (double) distinctWordInDocuments.count();
 
-        System.out.println(String.format("The average length of words is: %s", averageLengthOfDistinctWord));
+    }
+
+    private interface WordCounter extends Serializable {
+        JavaPairRDD<String, Long> count();
+
+        default Iterator<Tuple2<String, Long>> pairedWordWithNumberOfOccurrences(String document) {
+            final String[] tokens = document.split(" ");
+            final Map<String, Long> counts = new HashMap<>();
+            final List<Tuple2<String, Long>> pairs = new ArrayList<>();
+            for (String token : tokens) {
+                counts.put(token, 1L + counts.getOrDefault(token, 0L));
+            }
+            for (Map.Entry<String, Long> e : counts.entrySet()) {
+                pairs.add(new Tuple2<>(e.getKey(), e.getValue()));
+            }
+            return pairs.iterator();
+        }
+    }
+
+    private static class WordCounterWithTimer implements WordCounter {
+        private final WordCounter delegate;
+
+        WordCounterWithTimer(WordCounter delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public JavaPairRDD<String, Long> count() {
+            final Instant instant = Instant.now();
+            final JavaPairRDD<String,Long> result = delegate.count();
+            result.count(); //force execution
+            System.out.println(String.format("Time = %s", MILLIS.between(instant, Instant.now())));
+            return result;
+        }
 
     }
 
-    private static JavaPairRDD<String, Long> wordCount1Original(JavaRDD<String> docs){
-        return docs
-                // Map phase
-                .flatMapToPair((document) -> {
-                    final String[] tokens = document.split(" ");
-                    final Map<String, Long> counts = new HashMap<>();
-                    final List<Tuple2<String, Long>> pairs = new ArrayList<>();
-                    for (String token : tokens) {
-                        counts.put(token, 1L + counts.getOrDefault(token, 0L));
-                    }
-                    for (Map.Entry<String, Long> e : counts.entrySet()) {
-                        pairs.add(new Tuple2<>(e.getKey(), e.getValue()));
-                    }
-                    return pairs.iterator();
-                })
-                // Reduce phase
-                .groupByKey()
-                .mapValues((it) -> {
-                    long sum = 0;
-                    for (long c : it) {
-                        sum += c;
-                    }
-                    return sum;
-                });
+
+    private static abstract class AbstractWordCounter implements WordCounter {
+        final JavaRDD<String> docs;
+        JavaPairRDD<String, Long> wordsInDocument = null;
+
+        AbstractWordCounter(JavaRDD<String> docs) {
+            this.docs = docs;
+        }
+
     }
 
-    private static JavaPairRDD<String, Long> wordCount1(JavaRDD<String> docs){
-        return docs
-                // Map phase
-                .flatMapToPair((document) -> {
-                    final String[] tokens = document.split(" ");
-                    final Map<String, Long> counts = new HashMap<>();
-                    final List<Tuple2<String, Long>> pairs = new ArrayList<>();
-                    for (String token : tokens) {
-                        counts.put(token, 1L + counts.getOrDefault(token, 0L));
-                    }
-                    for (Map.Entry<String, Long> e : counts.entrySet()) {
-                        pairs.add(new Tuple2<>(e.getKey(), e.getValue()));
-                    }
-                    return pairs.iterator();
-                })
-                .reduceByKey((Function2<Long, Long, Long>) (v1, v2) -> v1 + v2);
+    private static class WordCounter1 extends AbstractWordCounter {
+        WordCounter1(JavaRDD<String> docs) {
+            super(docs);
+        }
+
+        @Override
+        public JavaPairRDD<String, Long> count() {
+            if(wordsInDocument == null){
+                wordsInDocument = docs
+                        .flatMapToPair(this::pairedWordWithNumberOfOccurrences)
+                        .reduceByKey((Function2<Long, Long, Long>) Long::sum);
+            }
+            return wordsInDocument;
+        }
+
     }
 
-    //    private static JavaPairRDD<String, Long> wordCount2AZ(JavaRDD<String> docs, int k){
-//        return docs
-//                //round 1
-//                // Map phase
-//                .flatMapToPair((document) -> {
-//                    final String[] tokens = document.split(" ");
-//                    final Map<String,List<String>> map = Arrays.stream(tokens)
-//                            .collect(groupingBy(word -> word));
-//
-//                    final Random random = new Random();
-//
-//                    return map.entrySet().stream()
-//                            .map(entry -> new Tuple2<>(random.nextInt(k), new Tuple2<>(entry.getKey(), entry.getValue().size())))
-//                            .iterator();
-//
-//                })//(x,(w,ci(w)))
-//                .groupByKey()
-//
-//    }
+    private static class WordCounter2a extends AbstractWordCounter{
+        private final int k;
+
+        WordCounter2a(JavaRDD<String> docs, int k) {
+            super(docs);
+            this.k = k;
+        }
+
+        @Override
+        public JavaPairRDD<String, Long> count() {
+            final Random random = new Random();
+            return docs
+                    //round 1
+                    // Map phase
+                    .flatMapToPair(this::pairedWordWithNumberOfOccurrences)
+                    .groupBy((Function<Tuple2<String, Long>, Integer>) v1 -> random.nextInt(k))
+                    .flatMapToPair((PairFlatMapFunction<Tuple2<Integer, Iterable<Tuple2<String, Long>>>, String, Long>) ele -> {
+                        final Map<String,List<Tuple2<String,Long>>> map = StreamSupport.stream(ele._2.spliterator(), false)
+                                .collect(groupingBy(t -> t._1));
+
+                        return map.values().stream().map(tuple2s -> tuple2s.stream().reduce((stringIntegerTuple2, stringIntegerTuple22) -> new Tuple2<>(stringIntegerTuple2._1, stringIntegerTuple2._2 + stringIntegerTuple22._2)).orElse(null)).iterator();
+                    })//round2
+                    .reduceByKey((Function2<Long, Long, Long>) Long::sum);
+
+        }
+    }
+
+    private static class WordCounter2b extends AbstractWordCounter {
+
+        WordCounter2b(JavaRDD<String> docs) {
+            super(docs);
+        }
+
+        @Override
+        public JavaPairRDD<String, Long> count() {
+            return docs
+                    //round 1
+                    // Map phase
+                    .flatMapToPair(this::pairedWordWithNumberOfOccurrences)
+                    .mapPartitionsToPair((PairFlatMapFunction<Iterator<Tuple2<String, Long>>, String, Long>) tuple2Iterator -> {
+                        Iterable<Tuple2<String, Long>> iterable = () -> tuple2Iterator;
+                        final Map<String,List<Tuple2<String,Long>>> map = StreamSupport.stream(iterable.spliterator(), false)
+                                .collect(groupingBy(t -> t._1));
+
+                        return map.values().stream().map(tuple2s -> tuple2s.stream().reduce((stringIntegerTuple2, stringIntegerTuple22) -> new Tuple2<>(stringIntegerTuple2._1, stringIntegerTuple2._2 + stringIntegerTuple22._2)).orElse(null)).iterator();
+
+                    },true)
+                    .reduceByKey((Function2<Long, Long, Long>) Long::sum);
+
+        }
+    }
+
 }
