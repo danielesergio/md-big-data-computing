@@ -38,13 +38,15 @@ public class G58HM2 {
         docs.count();
 
         WordCounter[] wordCounters = new WordCounter[]{
-                new WordCounterWithTimer(new WordCounter1(docs)),
-                new WordCounterWithTimer(new WordCounter2a(docs, k)),
-                new WordCounterWithTimer(new WordCounter2b(docs))
+                new WordCounter1(),
+                new WordCounter2a(k),
+                new WordCounter2b()
         };
 
-        System.out.println(String.format("The average length of words is: %s == %s == %s", Arrays.stream(wordCounters).map(WordCounter::count).map(G58HM2::averageLengthOfDistinctWord).toArray()));
+        Arrays.stream(wordCounters).forEach(wc -> wc.count(docs).count());
 
+        System.out.println(String.format("The average length of words is: %s == %s == %s", Arrays.stream(wordCounters).map(wc -> new WordCounterWithTimer(wc).count(docs)).map(G58HM2::averageLengthOfDistinctWord).toArray()));
+//
 //        Scanner scanner = new Scanner(System.in);
 //        scanner.nextLine();
     }
@@ -63,7 +65,7 @@ public class G58HM2 {
     }
 
     private interface WordCounter extends Serializable {
-        JavaPairRDD<String, Long> count();
+        JavaPairRDD<String, Long> count(JavaRDD<String> docs);
 
         default Iterator<Tuple2<String, Long>> pairedWordWithNumberOfOccurrences(String document) {
             final String[] tokens = document.split(" ");
@@ -87,54 +89,36 @@ public class G58HM2 {
         }
 
         @Override
-        public JavaPairRDD<String, Long> count() {
+        public JavaPairRDD<String, Long> count(JavaRDD<String> docs) {
             final Instant instant = Instant.now();
-            final JavaPairRDD<String,Long> result = delegate.count();
+            final JavaPairRDD<String,Long> result = delegate.count(docs);
             result.count(); //force execution
-            System.out.println(String.format("Time = %s", MILLIS.between(instant, Instant.now())));
+            System.out.println(String.format("Computation time using %s is: %s", delegate.getClass().getSimpleName(), MILLIS.between(instant, Instant.now())));
             return result;
         }
 
     }
 
-
-    private static abstract class AbstractWordCounter implements WordCounter {
-        final JavaRDD<String> docs;
-        JavaPairRDD<String, Long> wordsInDocument = null;
-
-        AbstractWordCounter(JavaRDD<String> docs) {
-            this.docs = docs;
-        }
-
-    }
-
-    private static class WordCounter1 extends AbstractWordCounter {
-        WordCounter1(JavaRDD<String> docs) {
-            super(docs);
-        }
+    private static class WordCounter1 implements WordCounter {
 
         @Override
-        public JavaPairRDD<String, Long> count() {
-            if(wordsInDocument == null){
-                wordsInDocument = docs
-                        .flatMapToPair(this::pairedWordWithNumberOfOccurrences)
-                        .reduceByKey((Function2<Long, Long, Long>) Long::sum);
-            }
-            return wordsInDocument;
+        public JavaPairRDD<String, Long> count(JavaRDD<String> docs) {
+            return docs
+                    .flatMapToPair(this::pairedWordWithNumberOfOccurrences)
+                    .reduceByKey((Function2<Long, Long, Long>) Long::sum);
         }
 
     }
 
-    private static class WordCounter2a extends AbstractWordCounter{
+    private static class WordCounter2a implements WordCounter{
         private final int k;
 
-        WordCounter2a(JavaRDD<String> docs, int k) {
-            super(docs);
+        WordCounter2a(int k) {
             this.k = k;
         }
 
         @Override
-        public JavaPairRDD<String, Long> count() {
+        public JavaPairRDD<String, Long> count(JavaRDD<String> docs) {
             final Random random = new Random();
             return docs
                     //round 1
@@ -152,14 +136,10 @@ public class G58HM2 {
         }
     }
 
-    private static class WordCounter2b extends AbstractWordCounter {
-
-        WordCounter2b(JavaRDD<String> docs) {
-            super(docs);
-        }
+    private static class WordCounter2b implements WordCounter {
 
         @Override
-        public JavaPairRDD<String, Long> count() {
+        public JavaPairRDD<String, Long> count(JavaRDD<String> docs) {
             return docs
                     //round 1
                     // Map phase
@@ -171,7 +151,7 @@ public class G58HM2 {
 
                         return map.values().stream().map(tuple2s -> tuple2s.stream().reduce((stringIntegerTuple2, stringIntegerTuple22) -> new Tuple2<>(stringIntegerTuple2._1, stringIntegerTuple2._2 + stringIntegerTuple22._2)).orElse(null)).iterator();
 
-                    },true)
+                    },true)//round2
                     .reduceByKey((Function2<Long, Long, Long>) Long::sum);
 
         }
