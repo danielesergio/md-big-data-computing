@@ -1,3 +1,5 @@
+import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -18,13 +20,23 @@ import static java.util.stream.Collectors.groupingBy;
 
 public class G58HM2 {
 
-    public static void main(String[] args) throws IOException {
-        if (args.length == 0) {
-            throw new IllegalArgumentException("Expecting an integer 'k' and the file name on the command line");
-        }
+    //todo dubbi:
+    //1 - template (Improved Word count 1) non e' wc1 delle slide -> non ha coppie c(w,1) ma c(w,x) con x >=1
+    //2 - cambiando ordine di esecuzione degli algoritmi cambia l'efficenza con cui vengono applicati perche` spark cache automaticamente dei valori parziali;
+    //3 - deve ricevere anchee k dalla linea di comando
 
-        final int k = Integer.parseInt(args[0]);
-        final String filePath = args[1];
+    public static void main(String[] args) throws IOException {
+
+        // FIXME: 06/04/19 remove log configuration before release
+        Logger.getLogger("org").setLevel(Level.OFF);
+        Logger.getLogger("akka").setLevel(Level.OFF);
+
+
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("Insert an integer k ");
+        final int k = scanner.nextInt();
+        System.out.println("Insert file name with documents to load ");
+        final String filePath = scanner.nextLine();
 
 
         // Setup Spark
