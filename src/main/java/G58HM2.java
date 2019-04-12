@@ -1,5 +1,3 @@
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -12,6 +10,7 @@ import scala.Tuple2;
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import static java.time.temporal.ChronoUnit.MILLIS;
@@ -20,11 +19,6 @@ import static java.util.stream.Collectors.groupingBy;
 public class G58HM2 {
 
     public static void main(String[] args){
-
-        // TODO remove log configuration before release
-        Logger.getLogger("org").setLevel(Level.OFF);
-        Logger.getLogger("akka").setLevel(Level.OFF);
-
 
         System.out.println("Insert an integer bigger than 0 for k");
         final Scanner scanner = new Scanner(System.in);
@@ -37,24 +31,14 @@ public class G58HM2 {
         final String filePath = scanner.hasNextLine() ? scanner.nextLine() : "";
 
         // Setup Spark
-        // FIXME: 09/04/19 aggiungere setMaster("local[*]") o no?
         SparkConf conf = new SparkConf(true)
                 .setAppName("G58HM2");
         JavaSparkContext sc = new JavaSparkContext(conf);
-        // TODO remove log configuration before release
-        sc.setLogLevel("ERROR");
 
         //load documents into k partition and cached
         final JavaRDD<String> docs = sc.textFile(filePath).repartition(k).cache();
         //because of spark transformations are lazy evaluated it's needed an action to load docs
         docs.count();
-
-        /*
-                Arrays.stream(wordCounters).forEach(wc -> {
-            System.out.println("******");
-                    wc.count(docs).collect().forEach(e -> System.out.println(e._1+" "+e._2));
-                });
-         */
 
         WordCounter[] wordCounters = new WordCounter[]{
                 new WordCounter1(),
@@ -64,21 +48,42 @@ public class G58HM2 {
                 new WordCounter2b(),
         };
 
-        // FIXME: 07/04/19 spark automatically cache some result so the first algorithm is penalized.
-        //        To mitigate this fact all algorithms are run once time before measuring the time
-        Arrays.stream(wordCounters).forEach(wc -> wc.count(docs).count());
-        //Show the average length of words in documents. The result is calculated three times using as input the result
+
+        final Collection<JavaPairRDD<String,Long>> countResults =  Arrays.stream(wordCounters)
+                .map(wc -> {
+                    // Spark automatically cache some result so the first algorithm is penalized.
+                    // To have a better comparison among algorithm each of them is run twice;
+                    final WordCounter wcwt = new WordCounterWithTimer(wc);
+                    wcwt.count(docs);
+                    return wcwt.count(docs);}).collect(Collectors.toList());
+
+        //Show the average length of words in documents. The result is calculated five times using as input the result
         //of count method, one for each algorithm. The result should be always the same.
-        System.out.println(String.format("The average length of words is: %s == %s == %s == %s == %s", Arrays.stream(wordCounters)
-                .map(wc -> new WordCounterWithTimer(wc).count(docs)).map(G58HM2::averageLengthOfDistinctWord).toArray()));
+        System.out.println(String.format("The average length of words is: %s == %s == %s == %s == %s",
+                countResults.stream().map(G58HM2::averageWordLength).toArray()));
+
+        //Show the average length of distinct words in documents. The result is calculated five times using as input the result
+        //of count method, one for each algorithm. The result should be always the same.
+        System.out.println(String.format("The average length of distinct words is: %s == %s == %s == %s == %s",
+                countResults.stream().map(G58HM2::averageLengthOfDistinctWord).toArray()));
+    }
+
+    private static double averageWordLength(JavaPairRDD<String, Long> wordsInDocument) {
+        final Tuple2<Long,Long> pair = wordsInDocument
+                //map pair (word, occurrences) to pair (length of word * occurrences, occurrences)
+                .map((Function<Tuple2<String, Long>, Tuple2<Long, Long>>) wordPairedWithOccurrences -> new Tuple2<>(wordPairedWithOccurrences._1.length() * wordPairedWithOccurrences._2, wordPairedWithOccurrences._2))
+                .reduce((Function2<Tuple2<Long, Long>, Tuple2<Long, Long>, Tuple2<Long, Long>>) (acc, current) -> new Tuple2<>(acc._1 + current._1, acc._2 + current._2));
+
+        return pair._1 / (double) pair._2;
+
     }
 
     private static double averageLengthOfDistinctWord(JavaPairRDD<String, Long> wordsInDocument) {
         return wordsInDocument
                 .keys() //get distinct words in document is guaranteed by design -> wordsInDocument is the result of WordCounter:count() method
-                .map((Function<String, Integer>) String::length) // map worth to its length
+                .map((Function<String, Integer>) String::length) // map word  to its length
                 .reduce((Function2<Integer, Integer, Integer>) Integer::sum) // sum all lengths
-                / (double) wordsInDocument.count(); // divide by the number of words, cast to double to obtain a double division instead of integer division
+                / (double) wordsInDocument.count(); // divide by the number of distinct words, cast to double to obtain a double division instead of integer division
 
     }
 
@@ -125,7 +130,7 @@ public class G58HM2 {
     /**
      * Implementation of 'Improved Word count 2' using groupBy optimized v1
      * The optimization is obtained by reducing the number of elements that are reshuffled when groupBy is called.
-     * This reduction is made through reducing all pairs (word, occurrences) with the same word to a single pair with
+     * This reduction is made through reducing all pairs (word, occurrences) with the same word to a single pair:
      * (word, total occurrences of word in partition)
      */
     private static class WordCounter2aOptimized_v1 extends WordCounter2 {
@@ -177,7 +182,7 @@ public class G58HM2 {
         private JavaRDD<String> optimization(JavaRDD<String> docs){
             return docs.glom()
                     .map((Function<List<String>, String>) documentsInPartition ->
-                        String.join(" ", documentsInPartition).trim());
+                            String.join(" ", documentsInPartition).trim());
         }
 
         @Override
@@ -212,7 +217,7 @@ public class G58HM2 {
      */
     private static class WordCounterWithTimer implements WordCounter {
         private final WordCounter delegate;
-
+        private int execution = 0;
         WordCounterWithTimer(WordCounter delegate) {
             this.delegate = delegate;
         }
@@ -222,7 +227,7 @@ public class G58HM2 {
             final Instant instant = Instant.now();
             final JavaPairRDD<String,Long> result = delegate.count(docs);
             result.count(); //JavaRDD transformation is lazy so an explicit action it's needed to force a calculation of count method
-            System.out.println(String.format("Computation time using %s is: %s", delegate.getClass().getSimpleName(), MILLIS.between(instant, Instant.now())));
+            System.out.println(String.format("Computation time using %s (execution number %s) is: %s", delegate.getClass().getSimpleName(), ++execution, MILLIS.between(instant, Instant.now())));
             return result;
         }
 
@@ -269,10 +274,10 @@ public class G58HM2 {
          * The result doesn't contain two pairs with the same world.
          */
         default Iterator<Tuple2<String, Long>> pairedWordWithNumberOfOccurrences(String document) {
-            final List<Tuple2<String, Long>> pairs = new ArrayList<>();
             if(document.trim().equals("")){
-                return pairs.iterator();
+                return Collections.emptyIterator();
             }
+            final List<Tuple2<String, Long>> pairs = new ArrayList<>();
             final Map<String, Long> counts = new HashMap<>();
             final String[] tokens = document.split(" ");
             for (String token : tokens) {
