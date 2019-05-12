@@ -4,10 +4,7 @@ import org.apache.spark.mllib.linalg.Vectors;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
 
 public class G58HM3 {
 
@@ -54,11 +51,19 @@ public class G58HM3 {
     /**
      *
      * @param P  a set of points
-     * @param C  set of centers
+     * @param C  set of centerIndexs
      * @return the average distance of a point of P from C
      */
     private static Double kmeansObj(List<Vector> P,List<Vector> C){
-        return null;
+        return P.stream().map( p ->
+                C.stream().map(c -> calculateDistance(p,c)).min(Double::compareTo).orElseThrow(() -> new IllegalArgumentException("Stream is Empty"))
+        ).mapToDouble(Double::doubleValue)
+                .average()
+                .orElseThrow(() -> new IllegalArgumentException("Stream is Empty"));
+    }
+
+    private static double calculateDistance(Vector point, Vector center){
+        return Math.sqrt(Vectors.sqdist(point, center));
     }
 
     private static Vector strToVector(String str) {
