@@ -184,60 +184,67 @@ public class G58HM3 {
         private final List<Vector> points;
         private Set<Integer> centerIndexs;
         private final Map<Vector, Double> minDistances;
-        private List<Integer> listForRandomExtraction;
         List<Long> WP;
+        private double denominator;
 
         //complexity is O(points.size())
         static DistancesFromCenters newInstance(List<Vector> points, int pointIndex, List<Long> WP){
             final Map<Vector, Double>  minDistances = new HashMap<>(points.size());
             final Vector firstCenter = points.get(pointIndex);
             final Set<Integer> centerIndexes = new LinkedHashSet<>();
-            List<Integer> listForRandomExtraction = new ArrayList<>();
+            double denominator = 0;
             for(int i=0; i<points.size(); i++){
                 final Vector point = points.get(i);
                 final double distance = calculateDistance(point, firstCenter);
                 minDistances.put(point, distance);
-                final int weight = (int) Math.floor(WP.get(i) * distance);
-                listForRandomExtraction.addAll(Collections.nCopies(weight, i));
+                denominator += WP.get(i) * distance;
             }
             centerIndexes.add(pointIndex);
-            return new DistancesFromCenters(points, centerIndexes, minDistances, listForRandomExtraction, WP);
+            return new DistancesFromCenters(points, centerIndexes, minDistances, WP, denominator);
         }
 
         public DistancesFromCenters(List<Vector> points,
                                     Set<Integer> centerIndexs,
                                     Map<Vector, Double> minDistances,
-                                    List<Integer> listForRandomExtraction,
-                                    List<Long> WP) {
+                                    List<Long> WP,
+                                    double denominator) {
             this.points = points;
             this.centerIndexs = centerIndexs;
             this.minDistances = minDistances;
-            this.listForRandomExtraction = listForRandomExtraction;
             this.WP = WP;
+            this.denominator = denominator;
         }
 
         //complexity is O(points.size())
         void extractNewCenter() {
-            final Random random = new Random();
-            final int randomIndex =  listForRandomExtraction.get(random.nextInt(listForRandomExtraction.size()));
+            final int randomIndex =  getRandomIndexByWeight();
             final Vector center = points.get(randomIndex);
             centerIndexs.add(randomIndex);
-            listForRandomExtraction = new ArrayList<>();
+            denominator = 0;
             for(int i = 0; i < points.size(); i++){
                 final Vector point = points.get(i);
                 final double distance = Math.min(minDistances.get(point), calculateDistance(point, center));
                 minDistances.put(point, distance);
-                final int weight = (int) Math.floor(WP.get(i) * distance);
-                listForRandomExtraction.addAll(Collections.nCopies(weight, i));
+                denominator += WP.get(i) * distance;
             }
         }
 
         public List<Vector> getCenters() {
             return centerIndexs.stream().map(points::get).collect(Collectors.toList());
         }
+
+        private int getRandomIndexByWeight(){
+            int i =0;
+            final double value = new Random().nextDouble();
+            double testValue = 0;
+            do{
+                final Vector pointToTest = points.get(i);
+                final double distance = minDistances.get(pointToTest);
+                testValue += WP.get(i) * distance / denominator;
+                i++;
+            }while(testValue < value && i < points.size());
+            while(centerIndexs.contains(--i));
+            return i;
+        }
     }
 }
-
-// 10 - 0 - 635.5578514126418
-// 10 - 0 - 635.351697068625
-// 10 - 0 - 635.3171721950132
