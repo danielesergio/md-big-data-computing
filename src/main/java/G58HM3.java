@@ -11,10 +11,6 @@ import java.util.stream.IntStream;
 
 public class G58HM3 {
 
-    //todo list:
-    //1 - capire come calcolare in maniera efficiente il w_p*(d_p)/(sum_{q non center} w_q*(d_q))
-    //2 - verificare calcolo distanza sia giusto
-    //3 - implmentare Lloyds algorithm
     public static void main(String[] args) throws IOException {
 
         final Scanner scanner = new Scanner(System.in);
@@ -53,7 +49,6 @@ public class G58HM3 {
     private static List<Vector> kmeansPP(List<Vector> P, List<Long> WP, int k, int iter){
         final Random random = new Random();
         final int randomIndex = random.nextInt(P.size());
-        System.out.println(randomIndex);
         final DistancesFromCenters distancesFromCenters = DistancesFromCenters.newInstance(P, randomIndex, WP);
         for(int i=2; i<k; i++){
             distancesFromCenters.extractNewCenter();
@@ -80,7 +75,7 @@ public class G58HM3 {
         int iter = 0;
         double theta = Double.MAX_VALUE;
         List<Vector> S = initialS;
-        while(!stopCondition || iter++ < maxIter){
+        while(!stopCondition && iter++ < maxIter){
             List<Partition> partitions = initPartition(P, S);
             for(Partition partition:partitions){
                 partition.setCenter(centroid(partition.getPoints()));
