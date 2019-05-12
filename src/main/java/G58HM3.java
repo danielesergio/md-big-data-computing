@@ -15,6 +15,9 @@ public class G58HM3 {
 
         final Scanner scanner = new Scanner(System.in);
 
+        System.out.println("Insert file name with points to load");
+        final String fileName = scanner.hasNextLine() ? scanner.nextLine() : "";
+
         System.out.println("Insert number of clusters (k > 0)");
         final int k = scanner.hasNextInt() ? Integer.parseInt(scanner.nextLine()) : 0;
         if(k < 1 ){
@@ -22,13 +25,10 @@ public class G58HM3 {
         }
 
         System.out.println("Insert number of iterations of Lloyd's (iter >=0)");
-        final int iter = scanner.hasNextInt() ? Integer.parseInt(scanner.nextLine()) : 0;
+        final int iter = scanner.hasNextInt() ? Integer.parseInt(scanner.nextLine()) : -1;
         if(iter < 0 ){
             throw new IllegalArgumentException(String.format("iter = %s. iter must be a non negative integer", iter));
         }
-
-        System.out.println("Insert file name with points to load");
-        final String fileName = scanner.hasNextLine() ? scanner.nextLine() : "";
 
         final List<Vector> P = readVectorsSeq(fileName);
         final List<Long> WP = Collections.nCopies(P.size(), 1L);
