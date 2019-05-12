@@ -48,12 +48,15 @@ public class G58HM3 {
      */
     private static List<Vector> kmeansPP(List<Vector> P, List<Long> WP, int k, int iter){
         final Random random = new Random();
+        //Select first center casually (each point has same probability to be extracted)
         final int randomIndex = random.nextInt(P.size());
-        final DistancesFromCenters distancesFromCenters = DistancesFromCenters.newInstance(P, randomIndex, WP);
+        final PointsWithDistancesFromCenters pointsWithDistancesFromCenters = PointsWithDistancesFromCenters.newInstance(P, randomIndex, WP);
+        //Select first center casually (each point has a custom probability to be extracted)
         for(int i=2; i<k; i++){
-            distancesFromCenters.extractNewCenter();
+            pointsWithDistancesFromCenters.extractNewCenter();
         }
-        return lloyd(P, distancesFromCenters.getCenters(), iter);
+        //Compute the final C by refining C' using "iter" iterations of Lloyds' algorithm
+        return lloyd(P, pointsWithDistancesFromCenters.getCenters(), iter);
     }
 
     /**
@@ -76,14 +79,14 @@ public class G58HM3 {
         double theta = Double.MAX_VALUE;
         List<Vector> S = initialS;
         while(!stopCondition && iter++ < maxIter){
-            List<Partition> partitions = initPartition(P, S);
-            for(Partition partition:partitions){
-                partition.setCenter(centroid(partition.getPoints()));
+            List<Cluster> clusters = partition(P, S);
+            for(Cluster cluster : clusters){
+                cluster.setCenter(centroid(cluster.getPoints()));
             }
-            final double newTheta = Partition.kmeans(partitions);
+            final double newTheta = Cluster.kmeans(clusters);
             if( newTheta < theta){
                 theta = newTheta;
-                S = partitions.stream().map(Partition::getCenter).collect(Collectors.toList());
+                S = clusters.stream().map(Cluster::getCenter).collect(Collectors.toList());
             } else {
                 stopCondition = true;
             }
@@ -119,38 +122,53 @@ public class G58HM3 {
      *
      * @param P pointset
      * @param S S ⊆ points a set of k selected centers
+     * @return a list of clusters where each point is assigned to the cluster of the closest element of S
      */
-    private static List<Partition> initPartition(List<Vector> P, List<Vector> S){
-        final List<Partition> partitions = S.stream().map(s -> new Partition(new ArrayList<>(), s)).collect(Collectors.toList());
+    private static List<Cluster> partition(List<Vector> P, List<Vector> S){
+        final List<Cluster> clusters = S.stream().map(s -> new Cluster(new ArrayList<>(), s)).collect(Collectors.toList());
 
-        P.stream().filter( p -> !S.contains(p)).forEach(p -> partitions.stream()
-                .min(Comparator.comparingDouble(partition -> calculateDistance(partition.getCenter(), p)))
+        P.stream().filter( p -> !S.contains(p)).forEach(p -> clusters.stream()
+                .min(Comparator.comparingDouble(cluster -> calculateDistance(cluster.getCenter(), p)))
                 .orElseThrow(() -> new IllegalArgumentException("Stream is Empty"))
                 .addPoint(p));
 
-        return partitions;
+        return clusters;
     }
 
+    /**
+     *
+     * @param points list of point
+     * @return centroid of points
+     */
     private static Vector centroid(List<Vector> points){
         final Vector centroid = points.stream().reduce(G58HM3::sum).orElseThrow(() -> new IllegalArgumentException(""));
         BLAS.scal(1.0/points.size(), centroid);
         return centroid;
     }
 
+    /**
+     *
+     * @param v1 first vector
+     * @param v2 second vector
+     * @return sum of two vector
+     */
     private static Vector sum(Vector v1, Vector v2){
         return Vectors.dense(IntStream.range(0, v1.size())
                 .mapToDouble(i -> v1.apply(i) + v2.apply(i))
                 .toArray());
     }
 
-    private static class Partition {
+    private static class Cluster {
 
-        static double kmeans(List<Partition> partitions){
-            return partitions.stream().map(partition -> partition
+        static double kmeans(List<Cluster> clusters){
+            return clusters.stream().map(cluster -> cluster
                     .getPoints()
                     .stream()
-                    .map(point -> Vectors.sqdist(point, partition.getCenter()))
+                    //map each point with the square distance from its center
+                    .map(point -> Vectors.sqdist(point, cluster.getCenter()))
+                    //sum each square distance of a cluster
                     .reduce(Double::sum).orElseThrow(() -> new IllegalArgumentException("Empty stream")))
+                    //sum each result of each cluster
                     .reduce(Double::sum).orElseThrow(() -> new IllegalArgumentException("Empty stream"));
 
         }
@@ -158,7 +176,7 @@ public class G58HM3 {
         private final List<Vector> points;
         private Vector center;
 
-        Partition(List<Vector> points, Vector center) {
+        Cluster(List<Vector> points, Vector center) {
             this.points = points;
             this.center = center;
         }
@@ -180,15 +198,21 @@ public class G58HM3 {
         }
     }
 
-    private static class DistancesFromCenters{
+    private static class PointsWithDistancesFromCenters {
+        //list of all points
         private final List<Vector> points;
+        //set of centers
         private Set<Integer> centerIndexs;
+        //distance from closest center
         private final Map<Vector, Double> minDistances;
+        //point weight
         List<Long> WP;
+        //denominator used to weight the probability to select a point to be a center.
+        //denominator is equal to (sum_{q non center} w_q*(d_q))
         private double denominator;
 
         //complexity is O(points.size())
-        static DistancesFromCenters newInstance(List<Vector> points, int pointIndex, List<Long> WP){
+        static PointsWithDistancesFromCenters newInstance(List<Vector> points, int pointIndex, List<Long> WP){
             final Map<Vector, Double>  minDistances = new HashMap<>(points.size());
             final Vector firstCenter = points.get(pointIndex);
             final Set<Integer> centerIndexes = new LinkedHashSet<>();
@@ -200,14 +224,14 @@ public class G58HM3 {
                 denominator += WP.get(i) * distance;
             }
             centerIndexes.add(pointIndex);
-            return new DistancesFromCenters(points, centerIndexes, minDistances, WP, denominator);
+            return new PointsWithDistancesFromCenters(points, centerIndexes, minDistances, WP, denominator);
         }
 
-        DistancesFromCenters(List<Vector> points,
-                                    Set<Integer> centerIndexs,
-                                    Map<Vector, Double> minDistances,
-                                    List<Long> WP,
-                                    double denominator) {
+        PointsWithDistancesFromCenters(List<Vector> points,
+                                       Set<Integer> centerIndexs,
+                                       Map<Vector, Double> minDistances,
+                                       List<Long> WP,
+                                       double denominator) {
             this.points = points;
             this.centerIndexs = centerIndexs;
             this.minDistances = minDistances;
@@ -233,6 +257,11 @@ public class G58HM3 {
             return centerIndexs.stream().map(points::get).collect(Collectors.toList());
         }
 
+        /**
+         * function that extract next center casually.
+         * The probability that a point p is extracted is equal to:
+         *  w_p*(d_p)/(sum_{q non center} w_q*(d_q))
+         */
         private int getRandomIndexByWeight(){
             int i =0;
             final double value = new Random().nextDouble();
@@ -243,9 +272,10 @@ public class G58HM3 {
                 testValue += WP.get(i) * distance / denominator;
                 i++;
             }while(testValue < value && i < points.size());
+            //the last instruction is an increment of i so the final value must be always decrement by one
             do{
                 --i;
-            }while(centerIndexs.contains(i));
+            }while(centerIndexs.contains(i)); //the correct value is the first element that isn't a center (distance calculate in row 265 is 0 when the point is a center)
             return i;
         }
     }
