@@ -158,24 +158,24 @@ public class G58HM3 {
         private final List<Vector> points;
         private Vector center;
 
-        public Partition(List<Vector> points, Vector center) {
+        Partition(List<Vector> points, Vector center) {
             this.points = points;
             this.center = center;
         }
 
-        public Vector getCenter() {
+        Vector getCenter() {
             return center;
         }
 
-        public void addPoint(Vector point){
+        void addPoint(Vector point){
             points.add(point);
         }
 
-        public void setCenter(Vector center) {
+        void setCenter(Vector center) {
             this.center = center;
         }
 
-        public List<Vector> getPoints() {
+        List<Vector> getPoints() {
             return points;
         }
     }
@@ -203,7 +203,7 @@ public class G58HM3 {
             return new DistancesFromCenters(points, centerIndexes, minDistances, WP, denominator);
         }
 
-        public DistancesFromCenters(List<Vector> points,
+        DistancesFromCenters(List<Vector> points,
                                     Set<Integer> centerIndexs,
                                     Map<Vector, Double> minDistances,
                                     List<Long> WP,
@@ -229,7 +229,7 @@ public class G58HM3 {
             }
         }
 
-        public List<Vector> getCenters() {
+        List<Vector> getCenters() {
             return centerIndexs.stream().map(points::get).collect(Collectors.toList());
         }
 
@@ -243,7 +243,9 @@ public class G58HM3 {
                 testValue += WP.get(i) * distance / denominator;
                 i++;
             }while(testValue < value && i < points.size());
-            while(centerIndexs.contains(--i));
+            do{
+                --i;
+            }while(centerIndexs.contains(i));
             return i;
         }
     }
