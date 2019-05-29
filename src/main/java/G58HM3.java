@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -13,7 +14,7 @@ public class G58HM3 {
 
     public static void main(String[] args) throws IOException {
 
-        final Scanner scanner = new Scanner(System.in);
+        /*final Scanner scanner = new Scanner(System.in);
 
         System.out.println("Insert file name with points to load");
         final String fileName = scanner.hasNextLine() ? scanner.nextLine() : "";
@@ -28,13 +29,20 @@ public class G58HM3 {
         final int iter = scanner.hasNextInt() ? Integer.parseInt(scanner.nextLine()) : -1;
         if(iter < 0 ){
             throw new IllegalArgumentException(String.format("iter = %s. iter must be a non negative integer", iter));
+        }*/
+
+        final String fileName = "covtype10K.data";
+        final List<Integer> K_list = Arrays.asList(10,25,50);
+        final List<Integer> iter_list = Arrays.asList(0,3);
+        for(int k:K_list) {
+            for(int iter:iter_list) {
+                final List<Vector> P = readVectorsSeq(fileName);
+                final List<Long> WP = Collections.nCopies(P.size(), 1L);
+                final List<Vector> C = kmeansPP(P, WP, k, iter);
+                System.out.println(String.format("The avarage distance is %s", kmeansObj(P,C)));
+
+            }
         }
-
-        final List<Vector> P = readVectorsSeq(fileName);
-        final List<Long> WP = Collections.nCopies(P.size(), 1L);
-        final List<Vector> C = kmeansPP(P, WP,  k, iter);
-
-        System.out.println(String.format("The avarage distance is %s", kmeansObj(P,C)));
 
     }
 
@@ -46,7 +54,7 @@ public class G58HM3 {
      * @param iter number of iterations of Lloyd's
      * @return  a set C of k centerIndexs
      */
-    private static List<Vector> kmeansPP(List<Vector> P, List<Long> WP, int k, int iter){
+    public static List<Vector> kmeansPP(List<Vector> P, List<Long> WP, int k, int iter){
         final Random random = new Random();
         //Select first center casually (each point has same probability to be extracted)
         final int randomIndex = random.nextInt(P.size());
@@ -56,7 +64,7 @@ public class G58HM3 {
             pointsWithDistancesFromCenters.extractNewCenter();
         }
         //Compute the final C by refining C' using "iter" iterations of Lloyds' algorithm
-        return lloyd(P, pointsWithDistancesFromCenters.getCenters(), iter);
+        return lloyd(P, pointsWithDistancesFromCenters.getCenters(), iter, WP);
     }
 
     /**
@@ -65,7 +73,7 @@ public class G58HM3 {
      * @param C  set of centerIndexs
      * @return the average distance of a point of points from C
      */
-    private static Double kmeansObj(List<Vector> P,List<Vector> C){
+    public static Double kmeansObj(List<Vector> P,List<Vector> C){
         return P.stream().map( p ->
                 C.stream().map(c -> calculateDistance(p,c)).min(Double::compareTo).orElseThrow(() -> new IllegalArgumentException("Stream is Empty"))
         ).mapToDouble(Double::doubleValue)
@@ -73,7 +81,7 @@ public class G58HM3 {
                 .orElseThrow(() -> new IllegalArgumentException("Stream is Empty"));
     }
 
-    private static List<Vector> lloyd(List<Vector> P, List<Vector> initialS, int maxIter){
+    private static List<Vector> lloyd(List<Vector> P, List<Vector> initialS, int maxIter, List<Long> WP){
         boolean stopCondition = false;
         int iter = 0;
         double theta = Double.MAX_VALUE;
@@ -81,7 +89,7 @@ public class G58HM3 {
         while(!stopCondition && iter++ < maxIter){
             List<Cluster> clusters = partition(P, S);
             for(Cluster cluster : clusters){
-                cluster.setCenter(centroid(cluster.getPoints()));
+                cluster.setCenter(centroid(cluster.getPoints(), WP));
             }
             final double newTheta = Cluster.kmeans(clusters);
             if( newTheta < theta){
@@ -140,10 +148,19 @@ public class G58HM3 {
      * @param points list of point
      * @return centroid of points
      */
-    private static Vector centroid(List<Vector> points){
-        final Vector centroid = points.stream().reduce(G58HM3::sum).orElseThrow(() -> new IllegalArgumentException(""));
-        BLAS.scal(1.0/points.size(), centroid);
+    private static Vector centroid(List<Vector> points, List<Long> WP){
+        final int pointDimension = points.get(0).size();
+        final AtomicInteger index = new AtomicInteger(0);
+        final Vector initialValue = Vectors.dense(new double[pointDimension]);
+        final Vector centroid =  points.stream().reduce(initialValue, (acc, value) -> G58HM3.sum(acc, scal(WP.get(index.getAndAdd(1)).intValue(), value)));
+        final double sumOfWP = WP.stream().reduce(Long::sum).orElseThrow(() -> new IllegalArgumentException(""));
+        BLAS.scal(1.0/sumOfWP, centroid);
         return centroid;
+    }
+
+    private static Vector scal(double v, Vector vector){
+        BLAS.scal(v, vector);
+        return vector;
     }
 
     /**
@@ -164,9 +181,9 @@ public class G58HM3 {
             return clusters.stream().map(cluster -> cluster
                     .getPoints()
                     .stream()
-                    //map each point with the square distance from its center
-                    .map(point -> Vectors.sqdist(point, cluster.getCenter()))
-                    //sum each square distance of a cluster
+                    //map each point with the square root distance from its center
+                    .map(point -> calculateDistance(point, cluster.getCenter()))
+                    //sum each square root distance of a cluster
                     .reduce(Double::sum).orElseThrow(() -> new IllegalArgumentException("Empty stream")))
                     //sum each result of each cluster
                     .reduce(Double::sum).orElseThrow(() -> new IllegalArgumentException("Empty stream"));
