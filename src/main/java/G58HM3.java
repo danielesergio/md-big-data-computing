@@ -60,7 +60,7 @@ public class G58HM3 {
         final int randomIndex = random.nextInt(P.size());
         final PointsWithDistancesFromCenters pointsWithDistancesFromCenters = PointsWithDistancesFromCenters.newInstance(P, randomIndex, WP);
         //Select first center casually (each point has a custom probability to be extracted)
-        for(int i=2; i<k; i++){
+        for(int i=1; i<k; i++){
             pointsWithDistancesFromCenters.extractNewCenter();
         }
         //Compute the final C by refining C' using "iter" iterations of Lloyds' algorithm
