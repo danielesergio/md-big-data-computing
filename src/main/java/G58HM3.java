@@ -87,9 +87,9 @@ public class G58HM3 {
         double theta = Double.MAX_VALUE;
         List<Vector> S = initialS;
         while(!stopCondition && iter++ < maxIter){
-            List<Cluster> clusters = partition(P, S);
+            List<Cluster> clusters = partition(P, S, WP);
             for(Cluster cluster : clusters){
-                cluster.setCenter(centroid(cluster.getPoints(), WP));
+                cluster.setCenter(centroid(cluster.getPoints(), cluster.getWP()));
             }
             final double newTheta = Cluster.kmeans(clusters);
             if( newTheta < theta){
@@ -132,13 +132,18 @@ public class G58HM3 {
      * @param S S ⊆ points a set of k selected centers
      * @return a list of clusters where each point is assigned to the cluster of the closest element of S
      */
-    private static List<Cluster> partition(List<Vector> P, List<Vector> S){
-        final List<Cluster> clusters = S.stream().map(s -> new Cluster(new ArrayList<>(), s)).collect(Collectors.toList());
+    private static List<Cluster> partition(List<Vector> P, List<Vector> S, List<Long> WP){
+        final List<Cluster> clusters = S.stream().map(s -> new Cluster(s)).collect(Collectors.toList());
 
-        P.stream().filter( p -> !S.contains(p)).forEach(p -> clusters.stream()
-                .min(Comparator.comparingDouble(cluster -> calculateDistance(cluster.getCenter(), p)))
-                .orElseThrow(() -> new IllegalArgumentException("Stream is Empty"))
-                .addPoint(p));
+        for(int i = 0; i<P.size(); i++){
+            final Vector p = P.get(i);
+            if(!S.contains(p)){
+                final Cluster cluster = clusters.stream()
+                .min(Comparator.comparingDouble(c -> calculateDistance(c.getCenter(), p)))
+                .orElseThrow(() -> new IllegalArgumentException("Stream is Empty"));
+                cluster.addPoint(p, WP.get(i));
+            }
+        }
 
         return clusters;
     }
@@ -191,10 +196,12 @@ public class G58HM3 {
         }
 
         private final List<Vector> points;
+        private final List<Long> WP;
         private Vector center;
 
-        Cluster(List<Vector> points, Vector center) {
-            this.points = points;
+        Cluster(Vector center) {
+            this.points = new ArrayList<>();
+            this.WP = new ArrayList<>();
             this.center = center;
         }
 
@@ -202,8 +209,9 @@ public class G58HM3 {
             return center;
         }
 
-        void addPoint(Vector point){
+        void addPoint(Vector point, Long pointWeight){
             points.add(point);
+            WP.add(pointWeight);
         }
 
         void setCenter(Vector center) {
@@ -212,6 +220,9 @@ public class G58HM3 {
 
         List<Vector> getPoints() {
             return points;
+        }
+        List<Long> getWP() {
+            return WP;
         }
     }
 
