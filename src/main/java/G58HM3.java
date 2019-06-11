@@ -7,6 +7,8 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -34,13 +36,28 @@ public class G58HM3 {
         final String fileName = "covtype10K.data";
         final List<Integer> K_list = Arrays.asList(10,25,50);
         final List<Integer> iter_list = Arrays.asList(0,3);
-        for(int k:K_list) {
-            for(int iter:iter_list) {
-                final List<Vector> P = readVectorsSeq(fileName);
-                final List<Long> WP = Collections.nCopies(P.size(), 1L);
-                final List<Vector> C = kmeansPP(P, WP, k, iter);
-                System.out.println(String.format("The avarage distance is %s", kmeansObj(P,C)));
+        double min,max, sum;
+        final int iteration = 100;
+        for (int k : K_list) {
+            for (int iter : iter_list) {
+                max = Double.NEGATIVE_INFINITY;
+                min = Double.POSITIVE_INFINITY;
+                sum = 0;
+                for(int i =0; i<iteration; i++) {
+                    final List<Vector> P = readVectorsSeq(fileName);
+                    final List<Long> WP = Collections.nCopies(P.size(), 1L);
+                    final List<Vector> C = kmeansPP(P, WP, k, iter);
+                    double current = kmeansObj(P, C);
+                    if(current > max){
+                        max = current;
+                    }
+                    if(current < min){
+                        min = current;
+                    }
 
+                    sum += current;
+                }
+                System.out.println(String.format("k = %s, iter = %s, interval  [%s,%s], avg = %s", k, iter, min, max, sum/iteration));
             }
         }
 
@@ -142,6 +159,8 @@ public class G58HM3 {
                 .min(Comparator.comparingDouble(c -> calculateDistance(c.getCenter(), p)))
                 .orElseThrow(() -> new IllegalArgumentException("Stream is Empty"));
                 cluster.addPoint(p, WP.get(i));
+            } else {
+                clusters.stream().filter(c -> c.getCenter().equals(p)).findFirst().get().addPoint(p, WP.get(i));
             }
         }
 
@@ -308,3 +327,30 @@ public class G58HM3 {
         }
     }
 }
+
+/*
+risultati prof
+k=10, iter=0 : [770,812]
+k=10, iter=3 : [648,660]
+k=25, iter=0 : [558,604]
+k=25, iter=3 : [486,497]
+k=50, iter=0 : [462,463]
+k=50, iter=3 : [395,401]
+
+
+risultati senza radice quadrata
+k = 10, iter = 0, interval  [739.6273909378035,1021.48245825856], avg = 842.1701951653579
+k = 10, iter = 3, interval  [636.4438158562479,710.4647747113472], avg = 667.6160874364141
+k = 25, iter = 0, interval  [561.6125080772463,646.1266212898827], avg = 596.3152177778018
+k = 25, iter = 3, interval  [464.7358755782571,503.7334612773808], avg = 480.55696588084794
+k = 50, iter = 0, interval  [449.30353584787173,504.14241018738636], avg = 472.2876150402021
+k = 50, iter = 3, interval  [374.86779299763697,396.1404407360493], avg = 383.01160338960983
+
+risultati con k corretto
+k = 10, iter = 0, interval  [729.5680258206179,917.2654859813302], avg = 802.824537961345
+k = 10, iter = 3, interval  [617.3411293875919,690.5360284897113], avg = 641.4285210605683
+k = 25, iter = 0, interval  [543.5617424083083,655.9502245789964], avg = 587.773374148496
+k = 25, iter = 3, interval  [462.04095588157094,505.4100849678806], avg = 473.28761661585037
+k = 50, iter = 0, interval  [445.1796128280074,490.5581020781094], avg = 469.41393971485195
+k = 50, iter = 3, interval  [373.39297121189094,390.62625243426214], avg = 380.81417757968194
+ */

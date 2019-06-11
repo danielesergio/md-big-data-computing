@@ -3,17 +3,15 @@ import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function2;
-import org.apache.spark.api.java.function.PairFlatMapFunction;
 import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.mllib.linalg.Vector;
 import org.apache.spark.mllib.linalg.Vectors;
 import scala.Tuple2;
 
+import java.time.Instant;
+import java.time.Duration;
 import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 public class G58HM4
 {
@@ -72,15 +70,27 @@ public class G58HM4
         System.out.println("Objective function is : <" + obj + ">");
     }
 
-    public static Double MR_kmedian(JavaRDD<Vector> pointset, int k, int L, int iter)
-    {
+    private static class DurationStepLogger {
+        private Instant start;
+
+        public DurationStepLogger() {
+            start = Instant.now();
+        }
+
+        private void log(final int step){
+            System.out.println(String.format("Stage %s duraration: %s milliseconds", step, Duration.between(start, Instant.now())));
+            start = Instant.now();
+        }
+    }
+
+    public static Double MR_kmedian(JavaRDD<Vector> pointset, int k, int L, int iter)    {
+        DurationStepLogger durationStepLogger = new DurationStepLogger();
         //
         // --- ADD INSTRUCTIONS TO TAKE AND PRINT TIMES OF ROUNDS 1, 2 and 3
         //
 
         //------------- ROUND 1 ---------------------------
-        JavaRDD<Tuple2<Vector,Long>> coreset = pointset.mapPartitions(x ->
-        {
+        JavaRDD<Tuple2<Vector,Long>> coreset = pointset.mapPartitions(x -> {
             final List<Vector> points = new ArrayList<>();
             final List<Long> weights = new ArrayList<>();
             while (x.hasNext())
@@ -99,36 +109,29 @@ public class G58HM4
             return c_w.iterator();
         });
 
+        coreset.count();
+        durationStepLogger.log(1);
         //------------- ROUND 2 ---------------------------
 
         final List<Tuple2<Vector, Long>> elems = new ArrayList<>(k*L);
         elems.addAll(coreset.collect());
         final List<Vector> coresetPoints = new ArrayList<>();
         final List<Long> weights = new ArrayList<>();
-        for(int i =0; i< elems.size(); ++i)
-        {
+        for(int i =0; i< elems.size(); ++i){
             coresetPoints.add(i, elems.get(i)._1);
             weights.add(i, elems.get(i)._2);
         }
 
         final List<Vector> centers = G58HM3.kmeansPP(coresetPoints, weights, k, iter);
 
+        durationStepLogger.log(2);
         //------------- ROUND 3: COMPUTE OBJ FUNCTION --------------------
         //
         //------------- ADD YOUR CODE HERE--------------------------------
         //
 
-        pointset.mapPartitionsToPair(
-                (PairFlatMapFunction<Iterator<Vector>, Double, Integer>) vectorIterator -> {
-                    final Iterable<Vector> iterable = () -> vectorIterator;
-                    final List<Vector> list = StreamSupport.stream(iterable.spliterator(), false)
-                            .collect(Collectors.toList());
-                    return Arrays.asList(new Tuple2<>(G58HM3.kmeansObj(list, centers), list.size())).iterator();
-                }
 
-        );
-
-        return pointset.glom()
+        final double result = pointset.glom()
                 .mapToPair((PairFunction<List<Vector>, Double, Integer>) vectors -> {
                     //Tuple(avg, numberOfPoints used)
                     return new Tuple2<>(G58HM3.kmeansObj(vectors, centers), vectors.size());
@@ -138,20 +141,20 @@ public class G58HM4
                     final int numberOfPoints = acc._2 + value._2;
                     return new Tuple2<>( (acc._1 * acc._2 + value._1 * value._2) / numberOfPoints , numberOfPoints);
                 })._1;
+
+        durationStepLogger.log(3);
+
+        return result;
     }
 
-    public static final List<Long> compute_weights(final List<Vector> points, final List<Vector> centers)
-    {
+    public static final List<Long> compute_weights(final List<Vector> points, final List<Vector> centers){
         Long weights[] = new Long[centers.size()];
         Arrays.fill(weights, 0L);
-        for(int i =0; i < points.size(); ++i)
-        {
+        for(int i =0; i < points.size(); ++i){
             double tmp = euclidean(points.get(i), centers.get(0));
             int mycenter = 0;
-            for(int j = 1; j < centers.size(); ++j)
-            {
-                if(euclidean(points.get(i),centers.get(j)) < tmp)
-                {
+            for(int j = 1; j < centers.size(); ++j){
+                if(euclidean(points.get(i),centers.get(j)) < tmp){
                     mycenter = j;
                     tmp = euclidean(points.get(i), centers.get(j));
                 }
