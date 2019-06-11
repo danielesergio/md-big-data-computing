@@ -78,7 +78,7 @@ public class G58HM4
         }
 
         private void log(final int step){
-            System.out.println(String.format("Stage %s duraration: %s milliseconds", step, Duration.between(start, Instant.now())));
+            System.out.println(String.format("Stage %s duraration: %s milliseconds", step, Duration.between(start, Instant.now()).toMillis()));
             start = Instant.now();
         }
     }
