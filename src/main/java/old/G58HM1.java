@@ -1,3 +1,5 @@
+package old;
+
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
@@ -41,7 +43,7 @@ public class G58HM1 {
 
         // Setup Spark
         SparkConf conf = new SparkConf(true)
-                .setAppName("G58HM1");
+                .setAppName("old.G58HM1");
         JavaSparkContext sc = new JavaSparkContext(conf);
 
         // Create a parallel collection

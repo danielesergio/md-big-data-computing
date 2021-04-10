@@ -1,3 +1,5 @@
+package old;
+
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -32,7 +34,7 @@ public class G58HM2 {
 
         // Setup Spark
         SparkConf conf = new SparkConf(true)
-                .setAppName("G58HM2");
+                .setAppName("old.G58HM2");
         JavaSparkContext sc = new JavaSparkContext(conf);
 
         //load documents into k partition and cached
