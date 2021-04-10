@@ -11,11 +11,10 @@ import scala.Tuple2;
 import java.io.IOException;
 import java.text.DecimalFormat;
 import java.util.stream.StreamSupport;
-
 /**
  * @author Daniele Sergio 1127732
  */
-public class G45HM1 {
+public class G45HW1 {
 
     private static class Review {
         final String productID;
