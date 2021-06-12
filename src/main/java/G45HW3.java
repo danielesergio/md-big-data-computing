@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -55,13 +56,18 @@ public class G45HW3 {
         T execute();
     }
 
-    private static <T> T executionTime(Command<T> cmd, String label){
-        final long start = System.currentTimeMillis();
-        final T result = cmd.execute();
-        final long executionTime = System.currentTimeMillis() - start;
-        System.out.println(String.format(label, executionTime));
-        return result;
+    private static class TimeCounter{
+        private long start;
+        void start(){
+            start =  System.currentTimeMillis();
+        }
+
+        long stop(){
+            return  System.currentTimeMillis() - start;
+        }
+
     }
+
     private static Config readConfig(String[] args){
         // &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
         // CHECKING NUMBER OF CMD LINE PARAMETERS
@@ -90,10 +96,11 @@ public class G45HW3 {
         sc.setLogLevel("WARN");
         return sc;
     }
+
     private static Vector fileRowToPoint (String str){
-        final String[] tokens = str.split(",");
+        final String[] tokens = str.split(" ");
         final double[] data = new double[tokens.length];
-        for (int i = 0; i < tokens.length-1; i++) {
+        for (int i = 0; i < tokens.length; i++) {
             data[i] = Double.parseDouble(tokens[i]);
         }
         final Vector point = Vectors.dense(data);
@@ -109,27 +116,21 @@ public class G45HW3 {
     private static double approxAvgSilhouette(
             JavaSparkContext sc,
             JavaPairRDD<Vector, Integer> currentClustering,
-            int t){
+            double t){
         // Compute the size of each cluster and then save the k sizes into an array or list represented by a
         // Broadcast variable named sharedClusterSizes.
-        long start = System.currentTimeMillis();
         final Broadcast<Map<Integer, Long>> sharedClusterSizes = sc.broadcast(currentClustering
                 .values()
                 .countByValue());
 
-        System.out.println("A "+ (System.currentTimeMillis() - start));
-        start = System.currentTimeMillis();
         // Extract a sample for each cluster indexed by cluster id
         final Broadcast<Map<Integer,List<Vector>>> clusteringSample = sc.broadcast(currentClustering
-                .filter((Function<Tuple2<Vector, Integer>, Boolean>) v1 -> new Random().nextDouble() <= Math.min((double) t /sharedClusterSizes.getValue().get(v1._2),1))
+                .filter((Function<Tuple2<Vector, Integer>, Boolean>) v1 -> new Random().nextDouble() <= Math.min( t /sharedClusterSizes.getValue().get(v1._2),1))
                 .mapToPair((PairFunction<Tuple2<Vector, Integer>, Integer, Vector>) Tuple2::swap)
                 .groupByKey()
                 .mapValues((Function<Iterable<Vector>, List<Vector>>) v1 -> StreamSupport.stream(v1.spliterator(), false).collect(Collectors.toList()))
                 .collectAsMap()
         );
-        System.out.println("B "+ (System.currentTimeMillis() - start));
-        start = System.currentTimeMillis();
-
         //Compute the approximate average silhouette coefficient of the input clustering and assign it to a
         // variable approxSilhFull. (Hint: to do so, you can first transform the RDD fullClustering by mapping each
         // element (point, clusterID) of fullClustering to the approximate silhouette coefficient of 'point').
@@ -157,7 +158,6 @@ public class G45HW3 {
             return (approxBP - approxAP) / Math.max(approxAP, approxBP); //  approximate silhouette coefficient of point
         }).reduce((Function2<Double, Double, Double>) Double::sum) /
                 sharedClusterSizes.getValue().values().stream().mapToLong(aLong -> aLong).sum();
-        System.out.println("C "+ (System.currentTimeMillis() - start));
         return a;
     }
 
@@ -167,8 +167,11 @@ public class G45HW3 {
 
         final JavaSparkContext sc = buildSparkContext();
 
+        final TimeCounter tc = new TimeCounter();
         // point 1: Reads the various parameters passed as command-line arguments. In particular, the set of points
         // must be stored into an RDD called inputPoints, which must be cached and subdivided into L partitions.
+        tc.start();
+
         final JavaRDD<Vector> inputPoints = sc.textFile(config.path)
                 .map(G45HW3::fileRowToPoint)
                 .repartition(config.L)
@@ -176,8 +179,9 @@ public class G45HW3 {
 
         // After reading the parameters print the time spent to read the input points.
         // Spark evaluation is lazy so we must use the data to force the execution
-        executionTime(inputPoints::count, "Time for input reading = %s");
-
+        inputPoints.count();
+        System.out.printf("Time for input reading = %s%n", tc.stop());
+                
         // point 2.1: Computes a clustering of the input points with k clusters, using the Spark implementation of
         // Lloyd's algorithm described above with iter iterations.
         // The clustering must be stored into an RDD currentClustering of pairs (point, cluster_index) with as many
@@ -186,34 +190,34 @@ public class G45HW3 {
         // (If computed by transforming each element of inputPoints with a map method, it should inherit its partitioning.)
 
         for (int k = config.kstart; k < (config.kstart + config.h); k++) {
-            final int currentK = k;
-            System.out.println(String.format("Number of clusters k = %s", currentK));
 
             //fixme first time clustering computation takes more time
-            final JavaPairRDD<Vector, Integer> currentClustering = executionTime(
-                    () -> computeCurrentClustering(config, inputPoints, currentK),
-                    "Time for clustering = %s"
-            );
+            tc.start();
+            final JavaPairRDD<Vector, Integer> currentClustering = computeCurrentClustering(config, inputPoints, k);
+            final long currentClusteringComputationTime = tc.stop();
+
             //fixme  first time avg silhouette computation takes more time
-            final double approxAvgSilhouette = executionTime(
-                    () -> approxAvgSilhouette(sc, currentClustering, config.M / currentK),
-                    "Time for silhouette computation = %s"
-            );
+            tc.start();
+            final double approxAvgSilhouette = approxAvgSilhouette(sc, currentClustering, ((double)config.M) / k);
+            final long approxAvgSilhouetteComputationTime = tc.stop();
+
+            System.out.printf("Number of clusters k = %s%n", k);
+            System.out.printf("Silhouette coefficient = %s%n", approxAvgSilhouette);
+            System.out.printf("Time for clustering = %s%n", currentClusteringComputationTime);
+            System.out.printf("Time for silhouette computation = %s%n", approxAvgSilhouetteComputationTime);
 
         }
 
     }
 
     private static JavaPairRDD<Vector, Integer> computeCurrentClustering(Config config, JavaRDD<Vector> inputPoints, int k) {
-        final long start =System.currentTimeMillis();
         final KMeansModel kMeansModel = KMeans.train(inputPoints.rdd(), k, config.iter);
-        System.out.println("!!!!!!!!!!!!!: "+ (System.currentTimeMillis()-start));
 
+        System.out.printf("Number of centers = %s, %s%n", k, kMeansModel.k());
         final JavaPairRDD<Vector, Integer> currentClustering =
                 inputPoints.mapToPair((PairFunction<Vector, Vector, Integer>) vector ->
                         new Tuple2<>(vector, kMeansModel.predict(vector)))
                         .cache();
-        //todo refactor
         //lazy evaluation
         currentClustering.count();
         return currentClustering;
