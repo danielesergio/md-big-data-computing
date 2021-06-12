@@ -6,6 +6,9 @@ buildscript {
         classpath 'com.github.jengelman.gradle.plugins:shadow:2.0.1'
     }
 }
+plugins {
+    id "application"
+}
 
 apply plugin: 'com.github.johnrengelman.shadow'
 
@@ -41,4 +44,11 @@ configurations.compile.extendsFrom configurations.shadowCompile
 shadowJar {
     zip64 true
     configurations = [project.configurations.shadowCompile] // Exclude runtime-only path
+}
+ext {
+    javaMainClass = "G45HW3"
+}
+
+application {
+    mainClassName = javaMainClass
 }

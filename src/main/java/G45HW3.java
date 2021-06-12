@@ -14,10 +14,12 @@ import org.apache.spark.rdd.RDD;
 import scala.Tuple2;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -91,7 +93,7 @@ public class G45HW3 {
     }
 
     private static JavaSparkContext buildSparkContext(){
-        final SparkConf conf = new SparkConf(true).setAppName("G45HM3");
+        final SparkConf conf = new SparkConf(true).setAppName("G45HM3").setMaster("local[*]");
         final JavaSparkContext sc = new JavaSparkContext(conf);
         sc.setLogLevel("WARN");
         return sc;
